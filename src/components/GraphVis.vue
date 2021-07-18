@@ -1,44 +1,55 @@
 <template>
   <v-container>
     <v-row>
-      <v-col cols="6" class="d-flex">
+      <v-col cols="9" class="d-flex">
         <div class="pa-2">
           <h3 class="pb-2">Visualization</h3>
           <p>
             You can visualize the graph below.
           </p>
+          <p>Use mouse scroll to zoom.</p>
         </div>
       </v-col>
-      <v-col cols="6" id="reload-buttons" class="d-flex justify-end align-center">
-        <v-btn class="mx-1" outlined @click="loadGraph(graphs.cloth)">Cloth</v-btn>
-        <v-btn class="mx-1" outlined @click="loadGraph(graphs.importance_human_visual)">Human Visual</v-btn>
+      <v-col cols="3" id="reload-buttons" class="d-flex justify-end align-center">
+        <!--        <v-btn class="mx-1" outlined @click="loadGraph(graphs.cloth)">Cloth</v-btn>-->
+        <!--        <v-btn class="mx-1" outlined @click="loadGraph(graphs.importance_human_visual)">Human Visual</v-btn>-->
+        <v-file-input
+            accept=".json"
+            label="Load Graph"
+            v-model="graphs.chosenGraph"
+            @change="onGraphSelected"
+            :disabled="graphSelectorDisabled"
+        ></v-file-input>
+
       </v-col>
     </v-row>
     <v-row>
-      <v-col cols="8">
+      <v-col cols="8"  id="svg-container">
         <v-row class="mt-2">
           <!--        Graph SVG       -->
-          <div id="svg-container" width="600" style="overflow: hidden; border: black solid 1px; ">
-            <svg width="960" height="600" style="border: black solid 1px; font: 10px Roboto" class="container-border"></svg>
+          <div style="overflow: hidden; border: black solid 1px; ">
+            <svg height="600" style="border: black solid 1px; font: 10px Roboto" class="container-border"></svg>
           </div>
         </v-row>
-<!--        <v-row class="align-center">-->
-<!--          <span class="ma-0">Zoom level:</span>-->
-<!--          <v-slider-->
-<!--              class="mt-3"-->
-<!--              hint="Set Zoom"-->
-<!--              max="10"-->
-<!--              min="0.3"-->
-<!--              step="0.05"-->
-<!--              v-model="zoomLevel"-->
-<!--              thumb-label="true"-->
-<!--          ></v-slider>-->
-<!--        </v-row>-->
+        <v-row class="align-center">
+          <span class="ma-0">Zoom level:</span>
+          <v-slider
+              class="mt-3"
+              hint="Set Zoom"
+              max="10"
+              min="0.3"
+              step="0.05"
+              v-model="zoomLevel"
+              thumb-label="true"
+              @input="updateZoomLevel"
+          ></v-slider>
+        </v-row>
       </v-col>
       <v-col cols="4">
         <v-card
             class="mx-auto mt-0"
             max-width="400"
+            id="video-player-container"
         >
           <video-player class="my-2" :options="playerOptions">
           </video-player>
@@ -52,21 +63,21 @@
 
           </v-card-text>
 
-<!--          <v-card-actions>-->
-<!--            <v-btn-->
-<!--                color="orange"-->
-<!--                text-->
-<!--            >-->
-<!--              Share-->
-<!--            </v-btn>-->
+          <!--          <v-card-actions>-->
+          <!--            <v-btn-->
+          <!--                color="orange"-->
+          <!--                text-->
+          <!--            >-->
+          <!--              Share-->
+          <!--            </v-btn>-->
 
-<!--            <v-btn-->
-<!--                color="orange"-->
-<!--                text-->
-<!--            >-->
-<!--              Explore-->
-<!--            </v-btn>-->
-<!--          </v-card-actions>-->
+          <!--            <v-btn-->
+          <!--                color="orange"-->
+          <!--                text-->
+          <!--            >-->
+          <!--              Explore-->
+          <!--            </v-btn>-->
+          <!--          </v-card-actions>-->
         </v-card>
 
       </v-col>
@@ -83,7 +94,7 @@ import * as d3 from "d3";
 const clothJson = require("../assets/graph/cloth_json_99.json");
 const humanVisualJson = require("../assets/graph/human_visual_json_92_99.json");
 const humanVisualImportanceJson = require("../assets/graph/importance_human_visual_json_92_99.json");
-import videoPlayer from "vue-video-player"
+import { EventBus } from "../plugins/bus";
 
 export default {
   name: "GraphVis",
@@ -91,12 +102,14 @@ export default {
     graphs: {
       cloth: clothJson,
       human_visual: humanVisualJson,
-      importance_human_visual: humanVisualImportanceJson
+      importance_human_visual: humanVisualImportanceJson,
+      chosenGraph: null
     },
     zoomLevel: 1,
     selectedVideo: "",
     selectedVideoNode : "",
     isFirstLoad: true,
+    graphSelectorDisabled: false,
     playerOptions: {
       height: '420',
       width: '370',
@@ -115,19 +128,16 @@ export default {
 
   methods: {
 
+
     calcDegree: function(id, data) {
 
     },
-
-
-
     /**
      * Play a new video.
      * @param event
      * @param d
      */
     onNodeClicked: function (event, d) {
-
       let videoName = d.id;
       if (videoName.substr(-4) != ".mp4") {
         videoName += ".mp4";
@@ -146,9 +156,34 @@ export default {
       this.playerOptions.autoplay = false;
     },
 
-   onZoomedSlider: function(event) {
-       this.zoomLevel = event.transform.k;
-   },
+    publishZoomLevel: function(transform) {
+      this.zoomLevel = transform.k;
+    },
+
+    /**
+     * Update zoom level.
+     * @param level
+     */
+    updateZoomLevel: function(level) {
+      let svg = d3.select("svg");
+      let g = svg.select("g");
+      let transform = g.attr("transform");
+      transform = transform.replace(/scale\(.*\)/gm, `scale(${level})`);
+      g.attr("transform", `${transform}`);
+    },
+
+    initGraph: function() {
+      let container = d3.select('#svg-container');
+      let svg = d3.select('svg');
+      d3.selectAll("svg > *").remove();
+      svg.attr("width", container.node().getBoundingClientRect().width);
+      svg.attr("height", 600);
+      svg.attr("style", "font: 10px Roboto");
+      let width = svg.attr('width');
+      let height = svg.attr('height');
+      return { width, height };
+
+    },
 
     loadGraph: function (data) {
       let drag = function (simulation) {
@@ -175,25 +210,13 @@ export default {
             .on("end", dragended);
       };
 
-      // let svgContainer = d3.select('#svg-container');
-      // d3.selectAll("#svg-container > *").remove();
-      // let svg = svgContainer.append('svg');
-
+      let { width, height } = this.initGraph();
       let svg = d3.select('svg');
-      d3.selectAll("svg > *").remove();
-      svg.attr("width", 800);
-      svg.attr("height", 600);
-      svg.attr("style", "font: 10px Roboto");
-      let width = svg.attr('width');
-      let height = svg.attr('height');
-
       // Main Graphics
       const g = svg.append("g");
 
       const links = data.links.map(d => Object.create(d));
       const nodes = data.nodes.map(d => Object.create(d));
-
-      // console.error(links, nodes);
 
       let now = Date.now();
 
@@ -252,29 +275,49 @@ export default {
           .attr("stroke", "white")
           .attr("stroke-width", 0.5);
 
-      // node.append("title")
-      //     .text(function(d) {
-      //       return "word: " + d.word;
-      //     });
-
       let onZoomed =  (event) => {
         console.log(event);
         let transform = event.transform;
         g.attr("transform", d => `${transform}`);
+        EventBus.$emit("zoomFromSvg", transform);
       }
 
       svg.call(d3.zoom()
-              .extent([[width / 2, height / 2], [width, height]])
-              .scaleExtent([0.2, 5])
-              .on("zoom", onZoomed));
+          .extent([[width / 2, height / 2], [width, height]])
+          .scaleExtent([0.2, 5])
+          .on("zoom", onZoomed));
+    },
+
+    onGraphSelected: function(graph) {
+      let validateGraph = function(graph) {
+        if (!graph.nodes || ! graph.links) {
+          return false;
+        }
+        return true;
+      }
+      console.log(graph);
+      if (graph.name.slice(graph.name.length - 5) != ".json") {
+        alert("Please select a valid json file.")
+        return;
+      }
+      let reader = new FileReader();
+      // Use the javascript reader object to load the contents
+      // of the file in the v-model prop
+      reader.readAsText(this.graphs.chosenGraph);
+      reader.onload = () => {
+        let loadedJson = reader.result;
+        console.log(loadedJson);
+        this.loadGraph(JSON.parse(loadedJson));
+      }
     }
-
-
-
   },
 
   mounted() {
-    this.loadGraph(this.graphs.cloth);
+    // this.loadGraph(this.graphs.cloth);
+    let videoContainer = d3.select("#video-player-container");
+    this.initGraph();
+    this.playerOptions.width = videoContainer.node().getBoundingClientRect().width;
+    EventBus.$on("zoomFromSvg", this.publishZoomLevel);
   }
 }
 </script>
